@@ -67,18 +67,25 @@ app.post("/api/auth/register", async (req, res) => {
       return res.status(400).json({ message: "Tên đăng nhập đã tồn tại!" });
     }
 
-    const customerRole = await prisma.role.findUnique({
-      where: { rolename: "customer" },
+    // --- PHẦN ĐÃ SỬA: TỰ ĐỘNG TẠO ROLE NORMAL VÀ MEMBERSHIP SCORE 10 ---
+    // 1. Tìm Role 'normal' (nếu chưa có thì tự tạo)
+    let normalRole = await prisma.role.findUnique({
+      where: { rolename: "normal" },
     });
-    const bronzeMembership = await prisma.membership.findFirst({
-      where: { mname: "Bronze" },
-    });
-
-    if (!customerRole || !bronzeMembership) {
-      return res
-        .status(500)
-        .json({ message: "Chưa seed dữ liệu Role hoặc Membership!" });
+    if (!normalRole) {
+      normalRole = await prisma.role.create({
+        data: { rolename: "normal" },
+      });
     }
+
+    // 2. Tự động tạo Membership mới với score = 10 cho user này
+    const newMembership = await prisma.membership.create({
+      data: {
+        mname: "New Member", // Tên hạng thành viên (có thể đổi tùy ý)
+        score: 10, // Điểm khởi tạo theo yêu cầu đề bài
+      },
+    });
+    // -------------------------------------------------------------------
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -87,8 +94,8 @@ app.post("/api/auth/register", async (req, res) => {
         username,
         fullname,
         password: hashedPassword,
-        roleid: customerRole.roleid,
-        mid: bronzeMembership.mid,
+        roleid: normalRole.roleid, // Gắn quyền normal
+        mid: newMembership.mid, // Gắn membership (chứa score 10)
       },
     });
 
@@ -98,6 +105,9 @@ app.post("/api/auth/register", async (req, res) => {
         uid: newUser.uid,
         username: newUser.username,
         fullname: newUser.fullname,
+        // Trả thêm role và score ra ngoài cho Postman dễ nhìn
+        rolename: normalRole.rolename,
+        score: newMembership.score,
       },
     });
   } catch (error) {
